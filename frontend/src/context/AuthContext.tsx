@@ -1,0 +1,36 @@
+import { createContext, useContext, useEffect, useState } from 'react';
+import { api } from '../api/client';
+
+export type UserRole = 'OWNER' | 'ADMIN' | 'SCANNER' | 'CUSTOM';
+export type AppPage = 'DASHBOARD' | 'SCAN' | 'PEOPLE' | 'IMPORT' | 'TRANSACTIONS' | 'REPORTS' | 'SETTINGS' | 'USER_MANAGEMENT';
+type User = { id: number; username: string; role: UserRole; allowedPages: AppPage[] };
+
+const AuthContext = createContext<{
+  user: User | null;
+  loading: boolean;
+  login: (username: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+}>({ user: null, loading: true, login: async () => {}, logout: async () => {} });
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api<User>('/auth/me').then(setUser).catch(() => setUser(null)).finally(() => setLoading(false));
+  }, []);
+
+  async function login(username: string, password: string) {
+    const u = await api<User>('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+    setUser(u);
+  }
+
+  async function logout() {
+    await api('/auth/logout', { method: 'POST' });
+    setUser(null);
+  }
+
+  return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>;
+}
+
+export const useAuth = () => useContext(AuthContext);

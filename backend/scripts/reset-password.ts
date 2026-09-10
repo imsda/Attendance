@@ -1,0 +1,41 @@
+import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
+import dotenv from 'dotenv';
+import { promptHidden, promptText } from './lib/prompt.js';
+
+dotenv.config();
+
+const prisma = new PrismaClient();
+
+async function main() {
+  try {
+    const username = await promptText('Username: ');
+    const password = await promptHidden('New Password: ');
+    const confirmPassword = await promptHidden('Confirm Password: ');
+    const confirm = await promptText('Are you sure? (y/n): ');
+
+    if (confirm.toLowerCase() !== 'y') {
+      console.log('Cancelled');
+      return;
+    }
+
+    if (!username) throw new Error('Username is required');
+    if (password.length < 12) throw new Error('Password must be at least 12 characters');
+    if (password !== confirmPassword) throw new Error('Passwords do not match');
+
+    const user = await prisma.adminUser.findUnique({ where: { username } });
+    if (!user) throw new Error('User not found');
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    await prisma.adminUser.update({ where: { username }, data: { passwordHash } });
+
+    console.log('Password updated successfully');
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : 'Failed to reset password');
+  process.exit(1);
+});

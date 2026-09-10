@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  CUSTOM
+  SCANNER
+}
+
+enum AppPage {
+  DASHBOARD
+  SCAN
+  PEOPLE
+  IMPORT
+  TRANSACTIONS
+  REPORTS
+  SETTINGS
+  USER_MANAGEMENT
+}
+
+enum AttendanceResult {
+  SUCCESS
+  FAILURE
+}
+
+model AdminUser {
+  id            Int          @id @default(autoincrement())
+  username      String       @unique
+  passwordHash  String
+  role          UserRole     @default(ADMIN)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  attendances   Attendance[]
+  pageAccess    UserPageAccess[]
+}
+
+model UserPageAccess {
+  id          Int       @id @default(autoincrement())
+  adminUserId Int
+  page        AppPage
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@unique([adminUserId, page])
+  @@index([adminUserId])
+}
+
+model Student {
+  id          Int          @id @default(autoincrement())
+  studentId   String       @unique
+  barcode     String       @unique
+  firstName   String
+  lastName    String
+  grade       String?
+  active      Boolean      @default(true)
+  notes       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  attendances Attendance[]
+
+  @@index([lastName, firstName])
+}
+
+model Setting {
+  id                        Int      @id @default(1)
+  schoolName                String   @default("Sunnydale Adventist Academy")
+  timezone                  String   @default("America/Chicago")
+  stationName               String   @default("Main Chapel Entrance")
+  scannerCooldownSeconds    Float    @default(1)
+  scannerDiagnosticsEnabled Boolean  @default(false)
+  enableSounds              Boolean  @default(true)
+  oneAttendancePerDay       Boolean  @default(true)
+  hideInactiveByDefault     Boolean  @default(true)
+  googleSheetsEnabled       Boolean  @default(false)
+  googleSheetId             String   @default("")
+  googleRosterTabName       String   @default("Students")
+  googleAttendanceTabName   String   @default("Attendance")
+  googleSummaryTabName      String   @default("Attendance Summary")
+  googleSyncIntervalMinutes Int      @default(5)
+  googleAutoSyncEnabled     Boolean  @default(true)
+  googleLastSyncAt          DateTime?
+  googleLastSyncSummary     String?
+  updatedAt                 DateTime @updatedAt
+}
+
+model Attendance {
+  id             Int              @id @default(autoincrement())
+  timestamp      DateTime         @default(now())
+  attendanceDate String
+  dailyKey       String?          @unique
+  scannedValue   String
+  result         AttendanceResult
+  failureReason  String?
+  stationName    String?
+  studentId      Int?
+  adminUserId    Int?
+  googleSyncedAt DateTime?
+  student        Student?         @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  adminUser      AdminUser?       @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
+
+  @@index([studentId, result, attendanceDate])
+  @@index([result, timestamp])
+  @@index([googleSyncedAt])
+}
+
+model ImportHistory {
+  id           Int      @id @default(autoincrement())
+  source       String
+  totalRows    Int
+  successRows  Int
+  failedRows   Int
+  createdAt    DateTime @default(now())
+  errorSummary String?
+}
