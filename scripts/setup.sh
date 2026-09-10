@@ -505,6 +505,19 @@ npm run prisma:generate -w backend
 log "Seeding database"
 npm run db:seed
 
+# If setup was invoked through sudo, return the SQLite runtime directories to
+# the invoking account. SQLite must be able to create journal/WAL files beside
+# the database when admin scripts and the service run as that account.
+if [[ "${EUID}" -eq 0 && -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+  runtime_group="$(id -gn "${SUDO_USER}")"
+  for runtime_dir in backend/prisma backend/data; do
+    if [[ -e "${runtime_dir}" ]]; then
+      chown -R "${SUDO_USER}:${runtime_group}" "${runtime_dir}"
+    fi
+  done
+  log "Set SQLite runtime ownership to ${SUDO_USER}:${runtime_group}"
+fi
+
 if ! npm exec -w backend -- node -e "const { PrismaClient } = require('@prisma/client'); const prisma = new PrismaClient(); prisma.adminUser.count({ where: { role: 'ADMIN' } }).then((count) => process.exit(count > 0 ? 0 : 1)).catch(() => process.exit(1)).finally(() => prisma.\$disconnect());"; then
   log "No admin account found. Run: npm run create-admin -w backend"
 fi

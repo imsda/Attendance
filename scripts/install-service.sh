@@ -66,6 +66,7 @@ Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
 EnvironmentFile=${PROJECT_ROOT}/backend/.env
+EnvironmentFile=${PROJECT_ROOT}/frontend/.env
 
 [Install]
 WantedBy=multi-user.target
@@ -81,4 +82,5 @@ echo "Restarting chapel-attendance service..."
 sudo systemctl restart chapel-attendance
 
 echo "Chapel Attendance service installed and started successfully."
-echo "Production app is served from the backend on port 4000 (frontend + API)."
+FRONTEND_PORT="$(sed -n 's/^VITE_PORT=//p' "${PROJECT_ROOT}/frontend/.env" | tail -n 1 | tr -d '\"' || true)"
+echo "Production app is served from the backend on port ${FRONTEND_PORT:-4000} (frontend + API)."

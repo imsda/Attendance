@@ -24,9 +24,17 @@ import { startGoogleSheetsScheduler } from './services/googleSheetsService.js';
 dotenv.config();
 
 const app = express();
-const port = Number(process.env.PORT || 4000);
-const host = process.env.BACKEND_HOST || process.env.HOST || '0.0.0.0';
 const isProduction = process.env.NODE_ENV === 'production';
+const currentFilePath = fileURLToPath(import.meta.url);
+const currentDir = path.dirname(currentFilePath);
+const frontendRootDir = path.resolve(currentDir, '../../frontend');
+
+// In production Express serves both the API and built frontend, so the
+// browser-facing port is configured alongside the frontend settings.
+if (isProduction) dotenv.config({ path: path.join(frontendRootDir, '.env') });
+
+const port = Number((isProduction && process.env.VITE_PORT) || process.env.PORT || 4000);
+const host = process.env.BACKEND_HOST || process.env.HOST || '0.0.0.0';
 const behindProxy = (process.env.TRUST_PROXY || 'true').toLowerCase() !== 'false';
 
 const configuredOrigins = (process.env.CLIENT_ORIGIN || '')
@@ -34,8 +42,6 @@ const configuredOrigins = (process.env.CLIENT_ORIGIN || '')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-const currentFilePath = fileURLToPath(import.meta.url);
-const currentDir = path.dirname(currentFilePath);
 const frontendDistDir = path.resolve(currentDir, '../../frontend/dist');
 const frontendIndexPath = path.join(frontendDistDir, 'index.html');
 
@@ -132,9 +138,9 @@ if (isProduction) {
 app.listen(port, host, () => {
   console.log(`Backend listening on http://${host}:${port}`);
   if (!isProduction) {
-    console.log('Development frontend is available via Vite on port 5173.');
+    console.log('Development frontend is available via Vite (see VITE_DEV_PORT in frontend/.env).');
   } else {
-    console.log('Production frontend is served by backend on port 4000.');
+    console.log(`Production frontend is served by backend on port ${port}.`);
   }
 
   void (async () => {

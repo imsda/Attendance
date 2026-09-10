@@ -62,6 +62,15 @@ GOOGLE_SHEETS_SPREADSHEET_ID="optional-default-sheet-id"
 
 Set `VITE_API_BASE=/api` in `frontend/.env` for same-origin production and reverse-proxy use.
 
+Set the browser-facing production port in `frontend/.env`:
+
+```dotenv
+VITE_PORT=4000
+VITE_DEV_PORT=5173
+```
+
+`VITE_PORT` controls the production Express listener that serves both the frontend and API. `VITE_DEV_PORT` controls only the Vite development server. Re-run `sudo ./scripts/install-service.sh` or restart `chapel-attendance` after changing the production port.
+
 ## Google Sheets setup
 
 1. Create a Google Cloud service account and enable the Google Sheets API.
