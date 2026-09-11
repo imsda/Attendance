@@ -25,6 +25,14 @@ run_step() {
   fi
 }
 
+run_as_service_user() {
+  if [[ "${EUID}" -eq 0 && "${SERVICE_USER}" != "root" ]]; then
+    sudo -H -u "${SERVICE_USER}" "$@"
+  else
+    "$@"
+  fi
+}
+
 is_linux_arm64() {
   [[ "$(uname -s)" == "Linux" && ( "$ARCHITECTURE" == "aarch64" || "$ARCHITECTURE" == "arm64" ) ]]
 }
@@ -36,18 +44,18 @@ ensure_arm64_rollup_compat() {
   # updater/install scripts; this is a runtime compatibility fix only.
   if is_linux_arm64; then
     echo "[UPDATE] ARM64 detected; ensuring Rollup native dependency exists."
-    npm install --no-save @rollup/rollup-linux-arm64-gnu || {
+    run_as_service_user npm install --no-save @rollup/rollup-linux-arm64-gnu || {
       echo "[UPDATE] ERROR: Failed to install @rollup/rollup-linux-arm64-gnu on ARM64." >&2
       exit 1
     }
   fi
 }
 
-run_step "npm install" npm install
+run_step "npm install" run_as_service_user npm install
 run_step "ensure ARM64 Rollup compatibility dependency" ensure_arm64_rollup_compat
 
 echo "Building full app for production (frontend + backend)..."
-npm run build
+run_as_service_user npm run build
 
 SERVICE_FILE="/etc/systemd/system/chapel-attendance.service"
 
