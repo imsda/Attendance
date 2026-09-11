@@ -28,11 +28,27 @@ function booleanCell(value: unknown, defaultValue = true) {
   return !['false', 'no', 'n', '0', 'inactive'].includes(normalized);
 }
 
+export function parseSpreadsheetId(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  const urlMatch = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  return urlMatch?.[1] ?? trimmed;
+}
+
+export function normalizeGooglePrivateKey(input: string): string {
+  let key = input.trim();
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) key = key.slice(1, -1);
+  return key.replace(/\\\\n/g, '\n').replace(/\\n/g, '\n').replace(/\r\n/g, '\n').trim();
+}
+
 function getSheetsClient() {
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
-  const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n');
+  const privateKey = normalizeGooglePrivateKey(process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '');
   if (!clientEmail || !privateKey) {
     throw new Error('Google service account credentials are not configured. Set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.');
+  }
+  if (!privateKey.includes('-----BEGIN PRIVATE KEY-----') || !privateKey.includes('-----END PRIVATE KEY-----')) {
+    throw new Error('Google service account private key is malformed. Copy the complete private_key value, including the BEGIN/END PRIVATE KEY lines.');
   }
   const auth = new google.auth.JWT({
     email: clientEmail,
@@ -215,8 +231,8 @@ async function writeSummaries(
 async function executeGoogleSync(): Promise<GoogleSyncResult> {
   const settings = await getSettings();
   if (!settings.googleSheetsEnabled) throw new Error('Google Sheets sync is disabled in Settings.');
-  const spreadsheetId = settings.googleSheetId.trim() || process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim();
-  if (!spreadsheetId) throw new Error('A Google Spreadsheet ID is required.');
+  const spreadsheetId = parseSpreadsheetId(settings.googleSheetId || process.env.GOOGLE_SHEETS_SPREADSHEET_ID || '');
+  if (!spreadsheetId) throw new Error('A Google Sheet URL or Spreadsheet ID is required.');
   const sheets = getSheetsClient();
   const errors: string[] = [];
   await ensureTabs(sheets, spreadsheetId, [settings.googleRosterTabName, settings.googleAttendanceTabName, settings.googleSummaryTabName]);
@@ -237,8 +253,49 @@ async function executeGoogleSync(): Promise<GoogleSyncResult> {
   return result;
 }
 
+async function executeRosterImport(): Promise<GoogleSyncResult> {
+  const settings = await getSettings();
+  if (!settings.googleSheetsEnabled) throw new Error('Google Sheets sync is disabled in Settings.');
+  const spreadsheetId = parseSpreadsheetId(settings.googleSheetId || process.env.GOOGLE_SHEETS_SPREADSHEET_ID || '');
+  if (!spreadsheetId) throw new Error('A Google Sheet URL or Spreadsheet ID is required.');
+  const sheets = getSheetsClient();
+  const errors: string[] = [];
+  await ensureTabs(sheets, spreadsheetId, [settings.googleRosterTabName]);
+  await ensureHeader(sheets, spreadsheetId, settings.googleRosterTabName, ROSTER_HEADERS);
+  const roster = await importRoster(sheets, spreadsheetId, settings.googleRosterTabName, errors);
+  return { imported: roster.imported, failed: roster.failed, attendanceRowsAppended: 0, summariesUpdated: 0, errors };
+}
+
+async function executeWriteBack(): Promise<GoogleSyncResult> {
+  const settings = await getSettings();
+  if (!settings.googleSheetsEnabled) throw new Error('Google Sheets sync is disabled in Settings.');
+  const spreadsheetId = parseSpreadsheetId(settings.googleSheetId || process.env.GOOGLE_SHEETS_SPREADSHEET_ID || '');
+  if (!spreadsheetId) throw new Error('A Google Sheet URL or Spreadsheet ID is required.');
+  const sheets = getSheetsClient();
+  const errors: string[] = [];
+  await ensureTabs(sheets, spreadsheetId, [settings.googleRosterTabName, settings.googleAttendanceTabName, settings.googleSummaryTabName]);
+  await ensureHeader(sheets, spreadsheetId, settings.googleAttendanceTabName, ATTENDANCE_HEADERS);
+  await ensureHeader(sheets, spreadsheetId, settings.googleSummaryTabName, SUMMARY_HEADERS);
+  const rosterResponse = await sheets.spreadsheets.values.get({ spreadsheetId, range: sheetRange(settings.googleRosterTabName, 'A:Z') });
+  const rosterRows = rosterResponse.data.values || [];
+  const attendanceRowsAppended = await appendAttendanceLog(sheets, spreadsheetId, settings.googleAttendanceTabName);
+  const totals = await buildTotals(settings.timezone);
+  const summariesUpdated = await writeSummaries(sheets, spreadsheetId, settings.googleRosterTabName, settings.googleSummaryTabName, rosterRows, totals);
+  return { imported: 0, failed: 0, attendanceRowsAppended, summariesUpdated, errors };
+}
+
 export function syncGoogleSheets() {
   if (!running) running = executeGoogleSync().finally(() => { running = null; });
+  return running;
+}
+
+export function importGoogleRoster() {
+  if (!running) running = executeRosterImport().finally(() => { running = null; });
+  return running;
+}
+
+export function writeBackGoogleSheets() {
+  if (!running) running = executeWriteBack().finally(() => { running = null; });
   return running;
 }
 

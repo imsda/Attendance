@@ -76,7 +76,7 @@ VITE_DEV_PORT=5173
 1. Create a Google Cloud service account and enable the Google Sheets API.
 2. Put the service account email and private key in `backend/.env`.
 3. Share the desired Google Sheet with the service-account email as an **Editor**.
-4. Open **Settings** in the app, enable Google Sheets, enter the Spreadsheet ID, and save.
+4. Open **Settings** in the app, enable Google Sheets, paste the full Google Sheet URL (or enter the Spreadsheet ID), and save.
 5. Open **Roster & Sync** and select **Sync now**.
 
 The app creates or uses three tabs:
@@ -113,7 +113,7 @@ Rebuilt on every sync for easy sorting and filtering:
 Student ID,Name,Grade,This Week,This Month,This Year,All Time,Last Attendance
 ```
 
-Automatic sync runs at the interval configured in Settings. A manual sync is always available to an administrator.
+Automatic sync runs at the interval configured in Settings. Administrators can run a full sync, import only the roster, or write back only pending attendance and calculated totals.
 
 ## Barcode and camera notes
 

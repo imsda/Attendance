@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { syncGoogleSheets, ROSTER_HEADERS } from '../services/googleSheetsService.js';
+import { importGoogleRoster, syncGoogleSheets, writeBackGoogleSheets, ROSTER_HEADERS } from '../services/googleSheetsService.js';
 import { getSettings } from '../services/settingsService.js';
 
 const router = Router();
@@ -20,6 +20,22 @@ router.post('/sync', async (_req, res) => {
   catch (error) {
     console.error('[GOOGLE_SYNC_MANUAL]', error);
     return res.status(500).json({ error: error instanceof Error ? error.message : 'Google Sheets sync failed.' });
+  }
+});
+
+router.post('/import-roster', async (_req, res) => {
+  try { return res.json(await importGoogleRoster()); }
+  catch (error) {
+    console.error('[GOOGLE_ROSTER_IMPORT]', error);
+    return res.status(400).json({ error: error instanceof Error ? error.message : 'Google roster import failed.' });
+  }
+});
+
+router.post('/write-back', async (_req, res) => {
+  try { return res.json(await writeBackGoogleSheets()); }
+  catch (error) {
+    console.error('[GOOGLE_WRITE_BACK]', error);
+    return res.status(400).json({ error: error instanceof Error ? error.message : 'Google Sheet write-back failed.' });
   }
 });
 
