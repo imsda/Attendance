@@ -21,13 +21,16 @@ import { configureSqlitePragmas } from './db.js';
 import { ensureSettingsInitialized } from './services/settingsService.js';
 import { startGoogleSheetsScheduler } from './services/googleSheetsService.js';
 
-dotenv.config();
-
-const app = express();
-const isProduction = process.env.NODE_ENV === 'production';
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFilePath);
 const frontendRootDir = path.resolve(currentDir, '../../frontend');
+
+// Load the backend dotenv file explicitly and prefer it over values inherited
+// from older systemd units, which may have parsed escaped PEM newlines.
+dotenv.config({ path: path.resolve(currentDir, '../.env'), override: true });
+
+const app = express();
+const isProduction = process.env.NODE_ENV === 'production';
 
 // In production Express serves both the API and built frontend, so the
 // browser-facing port is configured alongside the frontend settings.
