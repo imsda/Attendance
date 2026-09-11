@@ -65,8 +65,6 @@ ExecStart=/usr/bin/npm run start -w backend
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
-EnvironmentFile=${PROJECT_ROOT}/backend/.env
-EnvironmentFile=${PROJECT_ROOT}/frontend/.env
 
 [Install]
 WantedBy=multi-user.target

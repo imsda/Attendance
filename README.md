@@ -47,6 +47,8 @@ In production the backend serves the built frontend on port 4000.
 
 `scripts/setup.sh` creates `backend/.env` and `frontend/.env` from their examples without overwriting existing values.
 
+The application loads these files directly. The systemd unit intentionally does not parse them as `EnvironmentFile` entries because systemd handles escaped newlines differently from dotenv, which can corrupt multiline Google private keys.
+
 Backend values:
 
 ```dotenv
