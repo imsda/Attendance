@@ -59,6 +59,16 @@ run_as_service_user npm run build
 
 SERVICE_FILE="/etc/systemd/system/chapel-attendance.service"
 
+# Stop the existing process before migrating SQLite so schema upgrades cannot
+# race with live application queries. The migration preserves existing data.
+if sudo systemctl is-active --quiet chapel-attendance 2>/dev/null; then
+  echo "Stopping Chapel Attendance before database migration..."
+  sudo systemctl stop chapel-attendance
+fi
+
+run_step "database migrations" run_as_service_user npm run db:migrate
+run_step "database migration status" run_as_service_user npm run db:status
+
 echo "Writing systemd service file to ${SERVICE_FILE}..."
 sudo tee "${SERVICE_FILE}" > /dev/null <<SERVICE
 [Unit]

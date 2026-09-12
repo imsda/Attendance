@@ -141,6 +141,7 @@ sudo ./scripts/install-service.sh
 ```
 
 The service is named `chapel-attendance`. Use `scripts/update-service.sh` for safe pull, build, migration, and restart updates.
+The installer also applies pending database migrations without resetting existing attendance data before it starts the service.
 
 ## Docker
 
