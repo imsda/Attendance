@@ -7,9 +7,13 @@ const SUPPORTED_FORMATS: BarcodeFormat[] = [
   BarcodeFormat.CODE_39,
   BarcodeFormat.CODE_93,
   BarcodeFormat.CODABAR,
+  BarcodeFormat.DATA_MATRIX,
   BarcodeFormat.EAN_13,
   BarcodeFormat.EAN_8,
   BarcodeFormat.ITF,
+  BarcodeFormat.PDF_417,
+  BarcodeFormat.RSS_14,
+  BarcodeFormat.RSS_EXPANDED,
   BarcodeFormat.UPC_A,
   BarcodeFormat.UPC_E,
   BarcodeFormat.QR_CODE
@@ -47,7 +51,10 @@ export default function QrScanner({ onResult, onError, cooldownMs = 1000, diagno
   const [startupError, setStartupError] = useState('');
 
   const codeReader = useMemo(() => {
-    const hints = new Map([[DecodeHintType.POSSIBLE_FORMATS, SUPPORTED_FORMATS]]);
+    const hints = new Map<DecodeHintType, unknown>([
+      [DecodeHintType.POSSIBLE_FORMATS, SUPPORTED_FORMATS],
+      [DecodeHintType.TRY_HARDER, true]
+    ]);
     return new BrowserMultiFormatReader(hints);
   }, []);
   const diagnostics = useMemo(() => {
@@ -121,7 +128,13 @@ export default function QrScanner({ onResult, onError, cooldownMs = 1000, diagno
 
       const preferredDevice = devices.find((device) => REAR_CAMERA_LABEL_PATTERN.test(device.label));
 
-      const controls = await codeReader.decodeFromVideoDevice(preferredDevice?.deviceId, videoRef.current, (result, error) => {
+      const videoConstraints: MediaTrackConstraints = {
+        ...(preferredDevice ? { deviceId: { exact: preferredDevice.deviceId } } : { facingMode: { ideal: 'environment' } }),
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 30 }
+      };
+      const controls = await codeReader.decodeFromConstraints({ video: videoConstraints, audio: false }, videoRef.current, (result, error) => {
         const stream = videoRef.current?.srcObject;
         activeStreamRef.current = stream instanceof MediaStream ? stream : null;
 
@@ -148,6 +161,18 @@ export default function QrScanner({ onResult, onError, cooldownMs = 1000, diagno
       });
 
       controlsRef.current = controls;
+      const activeStream = videoRef.current.srcObject;
+      if (activeStream instanceof MediaStream) {
+        activeStreamRef.current = activeStream;
+        const videoTrack = activeStream.getVideoTracks()[0];
+        if (videoTrack) {
+          try {
+            await videoTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] } as unknown as MediaTrackConstraints);
+          } catch {
+            // Continuous focus is optional and is not exposed by every browser/camera.
+          }
+        }
+      }
       setStatus('scanner-ready');
     } catch (error) {
       const domError = error instanceof DOMException ? error.name : '';
@@ -194,7 +219,7 @@ export default function QrScanner({ onResult, onError, cooldownMs = 1000, diagno
         {status === 'requesting-permission' && 'Requesting camera permission… Please allow access in your browser prompt.'}
         {status === 'permission-denied' && 'Camera permission denied. You can allow permission in browser settings and retry, or use USB scanner / manual entry mode.'}
         {status === 'no-camera' && 'No camera found for this device/browser. Use USB scanner / manual entry mode.'}
-        {status === 'scanner-ready' && 'Scanner ready. Aim the rear camera at a student ID barcode.'}
+        {status === 'scanner-ready' && 'Scanner ready. Hold a linear barcode horizontally, fill most of the camera width, and keep it steady until it focuses.'}
         {status === 'scan-success' && 'Scan success. Processing this barcode…'}
         {status === 'library-init-failure' && 'Scanner library initialization failed after camera startup. Try USB scanner / manual entry mode.'}
         {status === 'scan-error' && 'Scan error. Try again or switch to USB scanner / manual entry mode.'}
