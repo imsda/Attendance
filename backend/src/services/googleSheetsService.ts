@@ -151,6 +151,7 @@ async function importRoster(sheets: sheets_v4.Sheets, spreadsheetId: string, tab
       errors.push(`Students row ${index + 1}: ${message}`);
     }
   }
+  if (errors.length) console.error(`[GOOGLE_ROSTER_IMPORT] ${failed} row(s) failed.`, errors.slice(0, 20));
   return { imported, failed, rows: values };
 }
 
