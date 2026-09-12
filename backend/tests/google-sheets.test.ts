@@ -12,3 +12,9 @@ test('normalizes escaped Google service-account private keys', () => {
   const escaped = '"-----BEGIN PRIVATE KEY-----\\\\nABC\\\\n-----END PRIVATE KEY-----\\\\n"';
   assert.equal(normalizeGooglePrivateKey(escaped), '-----BEGIN PRIVATE KEY-----\nABC\n-----END PRIVATE KEY-----');
 });
+
+test('a normalized private key survives base64 transport', () => {
+  const key = '-----BEGIN PRIVATE KEY-----\nABC\n-----END PRIVATE KEY-----';
+  const encoded = Buffer.from(key, 'utf8').toString('base64');
+  assert.equal(normalizeGooglePrivateKey(Buffer.from(encoded, 'base64').toString('utf8')), key);
+});

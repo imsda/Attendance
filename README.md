@@ -62,6 +62,8 @@ GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END P
 GOOGLE_SHEETS_SPREADSHEET_ID="optional-default-sheet-id"
 ```
 
+If a service manager or deployment environment alters PEM newlines, set `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_BASE64` to a base64 encoding of the complete PEM key. When present, the base64 value takes precedence over `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`.
+
 Set `VITE_API_BASE=/api` in `frontend/.env` for same-origin production and reverse-proxy use.
 
 Set the browser-facing production port in `frontend/.env`:

@@ -44,9 +44,13 @@ export function normalizeGooglePrivateKey(input: string): string {
 
 function getSheetsClient() {
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
-  const privateKey = normalizeGooglePrivateKey(process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '');
+  const encodedPrivateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_BASE64?.trim();
+  const privateKeySource = encodedPrivateKey
+    ? Buffer.from(encodedPrivateKey, 'base64').toString('utf8')
+    : process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
+  const privateKey = normalizeGooglePrivateKey(privateKeySource);
   if (!clientEmail || !privateKey) {
-    throw new Error('Google service account credentials are not configured. Set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.');
+    throw new Error('Google service account credentials are not configured. Set GOOGLE_SERVICE_ACCOUNT_EMAIL and either GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_BASE64 or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.');
   }
   if (!privateKey.includes('-----BEGIN PRIVATE KEY-----') || !privateKey.includes('-----END PRIVATE KEY-----')) {
     throw new Error('Google service account private key is malformed. Copy the complete private_key value, including the BEGIN/END PRIVATE KEY lines.');
