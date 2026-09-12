@@ -6,10 +6,12 @@ import { prisma } from '../db.js';
 const router = Router();
 const ALL_PAGES: AppPage[] = [AppPage.DASHBOARD, AppPage.SCAN, AppPage.PEOPLE, AppPage.IMPORT, AppPage.TRANSACTIONS, AppPage.REPORTS, AppPage.SETTINGS, AppPage.USER_MANAGEMENT];
 const SCANNER_PAGES: AppPage[] = [AppPage.SCAN];
+const REPORTER_PAGES: AppPage[] = [AppPage.SCAN, AppPage.TRANSACTIONS, AppPage.REPORTS];
 
 function getAllowedPages(role: UserRole, customPages: AppPage[]): AppPage[] {
   if (role === 'OWNER' || role === 'ADMIN') return [...ALL_PAGES];
   if (role === 'SCANNER') return [...SCANNER_PAGES];
+  if (role === 'REPORTER') return [...REPORTER_PAGES];
   return customPages;
 }
 const isOwnerSession = (req: any) => req.session?.role === 'OWNER';
@@ -19,9 +21,9 @@ function normalizePages(input: unknown): AppPage[] { if (!Array.isArray(input)) 
 router.get('/', async (_req, res) => { const users = await prisma.adminUser.findMany({ orderBy: { username: 'asc' }, include: { pageAccess: true } }); res.json(users.map((u)=>({id:u.id,username:u.username,role:u.role,createdAt:u.createdAt,updatedAt:u.updatedAt,allowedPages:getAllowedPages(u.role,u.pageAccess.map(e=>e.page))}))); });
 
 router.post('/', async (req, res) => {
-  const { username, password, role, allowedPages } = req.body as any;
+  const { username, password, role } = req.body as any;
   if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
-  const requestedRole: UserRole = role === 'OWNER' ? 'OWNER' : role === 'SCANNER' ? 'SCANNER' : role === 'CUSTOM' ? 'CUSTOM' : 'ADMIN';
+  const requestedRole: UserRole = role === 'OWNER' ? 'OWNER' : role === 'SCANNER' ? 'SCANNER' : role === 'REPORTER' ? 'REPORTER' : 'ADMIN';
   if (requestedRole === 'OWNER' && !isOwnerSession(req)) return res.status(403).json({ error: 'Only OWNER can create OWNER users' });
 
   const minPassword = requestedRole === 'SCANNER' ? 4 : 12;
@@ -30,9 +32,8 @@ router.post('/', async (req, res) => {
   }
 
   const safeRole: UserRole = requestedRole;
-  const safePages = normalizePages(allowedPages);
   const passwordHash = await bcrypt.hash(password, 10);
-  const created = await prisma.adminUser.create({ data: { username, passwordHash, role: safeRole, pageAccess: safeRole === 'CUSTOM' ? { createMany: { data: safePages.map((page) => ({ page })) } } : undefined } });
+  const created = await prisma.adminUser.create({ data: { username, passwordHash, role: safeRole } });
   const createdAccess = await prisma.userPageAccess.findMany({ where: { adminUserId: created.id } });
   res.status(201).json({ id: created.id, username: created.username, role: created.role, allowedPages: getAllowedPages(created.role, createdAccess.map((entry) => entry.page)) });
 });
@@ -42,7 +43,7 @@ router.patch('/:id', async (req, res) => {
   const existing = await prisma.adminUser.findUnique({ where: { id } }); if (!existing) return res.status(404).json({ error: 'User not found' });
   if (existing.role === 'OWNER' && !isOwnerSession(req)) return res.status(403).json({ error: 'Only OWNER can manage OWNER users' });
   const { password, role, allowedPages } = req.body as any;
-  const requestedRole: UserRole = role === 'OWNER' ? 'OWNER' : role === 'SCANNER' ? 'SCANNER' : role === 'CUSTOM' ? 'CUSTOM' : role === 'ADMIN' ? 'ADMIN' : existing.role;
+  const requestedRole: UserRole = role === 'OWNER' ? 'OWNER' : role === 'SCANNER' ? 'SCANNER' : role === 'REPORTER' ? 'REPORTER' : role === 'ADMIN' ? 'ADMIN' : existing.role;
   if (requestedRole === 'OWNER' && !isOwnerSession(req)) return res.status(403).json({ error: 'Only OWNER can assign OWNER role' });
   if (existing.role === 'OWNER' && requestedRole !== 'OWNER') {
     const ownerCount = await prisma.adminUser.count({ where: { role: 'OWNER' } });

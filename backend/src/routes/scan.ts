@@ -2,8 +2,18 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { processAttendance } from '../services/attendanceService.js';
 import { searchStudents } from '../services/searchStudents.js';
+import { getSettings } from '../services/settingsService.js';
 
 const router = Router();
+
+router.get('/config', async (_req, res) => {
+  const settings = await getSettings();
+  res.json({
+    scannerCooldownSeconds: settings.scannerCooldownSeconds,
+    scannerDiagnosticsEnabled: settings.scannerDiagnosticsEnabled,
+    enableSounds: settings.enableSounds
+  });
+});
 
 router.get('/students', async (req, res) => {
   try {

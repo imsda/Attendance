@@ -93,9 +93,10 @@ function Dashboard() {
 }
 
 type ScanResult = { ok: boolean; error?: string; reason?: string; student?: Student; attendanceDate?: string; totals?: { week: number; month: number; year: number; allTime: number } };
+type ScanConfig = Pick<Settings, 'scannerCooldownSeconds' | 'scannerDiagnosticsEnabled' | 'enableSounds'>;
 
 function ScanStation() {
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const [settings, setSettings] = useState<ScanConfig | null>(null);
   const [mode, setMode] = useState<'usb' | 'camera'>('usb');
   const [value, setValue] = useState('');
   const [result, setResult] = useState<ScanResult | null>(null);
@@ -103,7 +104,8 @@ function ScanStation() {
   const [lookup, setLookup] = useState('');
   const [matches, setMatches] = useState<Student[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { void api<Settings>('/settings').then(setSettings); }, []);
+  const lastSubmissionRef = useRef<{ value: string; timestamp: number } | null>(null);
+  useEffect(() => { void api<ScanConfig>('/scan/config').then(setSettings); }, []);
   useEffect(() => {
     if (!lookup.trim()) { setMatches([]); return; }
     const timer = window.setTimeout(() => void api<Student[]>(`/scan/students?q=${encodeURIComponent(lookup)}`).then(setMatches), 250);
@@ -123,10 +125,15 @@ function ScanStation() {
   }
 
   async function record(scannedValue: string) {
-    if (busy || !scannedValue.trim()) return;
+    const trimmed = scannedValue.trim();
+    if (busy || !trimmed) return;
+    const now = Date.now();
+    const cooldownMs = (settings?.scannerCooldownSeconds || 1) * 1000;
+    if (lastSubmissionRef.current?.value === trimmed && now - lastSubmissionRef.current.timestamp < cooldownMs) return;
+    lastSubmissionRef.current = { value: trimmed, timestamp: now };
     setBusy(true);
     try {
-      const response = await fetch(`${API_BASE}/scan`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scannedValue: scannedValue.trim() }) });
+      const response = await fetch(`${API_BASE}/scan`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scannedValue: trimmed }) });
       const payload = await response.json() as ScanResult;
       setResult(payload); tone(payload.ok);
     } catch { setResult({ ok: false, error: 'Unable to reach the attendance server.' }); tone(false); }
@@ -135,6 +142,7 @@ function ScanStation() {
 
   return <>
     <PageTitle title="Scan chapel attendance" subtitle="Use a USB scanner, camera, student ID, or name lookup." />
+    <p className="muted">Scan cooldown: <strong>{settings?.scannerCooldownSeconds || 1} second{(settings?.scannerCooldownSeconds || 1) === 1 ? '' : 's'}</strong></p>
     <div className="segmented"><button className={mode === 'usb' ? 'active' : ''} onClick={() => setMode('usb')}>USB scanner / ID</button><button className={mode === 'camera' ? 'active' : ''} onClick={() => setMode('camera')}>Camera</button></div>
     {mode === 'camera' && <QrScanner onResult={(text) => void record(text)} onError={(error) => setResult({ ok: false, error })} cooldownMs={(settings?.scannerCooldownSeconds || 1) * 1000} diagnosticsEnabled={settings?.scannerDiagnosticsEnabled} selectedScannerMode="camera" />}
     {mode === 'usb' && <section className="panel scan-entry"><form onSubmit={(event) => { event.preventDefault(); void record(value); }}><label>Scan barcode or enter student ID<input ref={inputRef} className="scan-input" value={value} onChange={(e) => setValue(e.target.value)} autoFocus autoComplete="off" placeholder="Ready to scan…" /></label><button className="primary" disabled={busy}>{busy ? 'Recording…' : 'Check in'}</button></form><p className="muted">Most USB barcode scanners type the ID and press Enter automatically.</p></section>}
@@ -243,13 +251,29 @@ function SettingsPage() {
     <section className="panel"><h2>Google Sheets</h2><div className="check-grid"><label className="checkbox"><input type="checkbox" checked={settings.googleSheetsEnabled} onChange={check('googleSheetsEnabled')} /> Enable Google Sheets</label><label className="checkbox"><input type="checkbox" checked={settings.googleAutoSyncEnabled} onChange={check('googleAutoSyncEnabled')} /> Automatic sync</label></div><div className="form-grid"><label>Google Sheet URL or ID<input value={settings.googleSheetId} onChange={text('googleSheetId')} placeholder="https://docs.google.com/spreadsheets/d/…" /></label><label>Sync every (minutes)<input type="number" min="1" value={settings.googleSyncIntervalMinutes} onChange={(e) => setSettings({ ...settings, googleSyncIntervalMinutes: Number(e.target.value) })} /></label><label>Roster tab<input value={settings.googleRosterTabName} onChange={text('googleRosterTabName')} /></label><label>Attendance log tab<input value={settings.googleAttendanceTabName} onChange={text('googleAttendanceTabName')} /></label><label>Summary tab<input value={settings.googleSummaryTabName} onChange={text('googleSummaryTabName')} /></label></div></section><button className="primary save-button">Save settings</button>{message && <p className="notice">{message}</p>}</form></>;
 }
 
-type User = { id: number; username: string; role: 'OWNER' | 'ADMIN' | 'CUSTOM' | 'SCANNER'; allowedPages: AppPage[] };
+type UserRole = 'OWNER' | 'ADMIN' | 'REPORTER' | 'SCANNER' | 'CUSTOM';
+type User = { id: number; username: string; role: UserRole; allowedPages: AppPage[] };
+
+const roleAccess = (role: UserRole) => role === 'SCANNER' ? 'Scan Chapel' : role === 'REPORTER' ? 'Scan Chapel, Attendance Log, and Reports (read-only)' : role === 'ADMIN' || role === 'OWNER' ? 'Full administrative access' : 'Legacy custom access';
+
+function UserEditor({ user, onSaved, onStatus }: { user: User; onSaved: () => Promise<void>; onStatus: (message: string) => void }) {
+  const [role, setRole] = useState<UserRole>(user.role);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    setBusy(true);
+    try { await api(`/users/${user.id}`, { method: 'PATCH', body: JSON.stringify({ role, password: password || undefined }) }); setPassword(''); onStatus(`${user.username} updated.`); await onSaved(); }
+    catch (error) { onStatus(error instanceof Error ? error.message : `Unable to update ${user.username}.`); }
+    finally { setBusy(false); }
+  }
+  return <tr><td>{user.username}</td><td>{user.role === 'OWNER' ? 'Owner' : <select aria-label={`Role for ${user.username}`} value={role} onChange={(event) => setRole(event.target.value as UserRole)}><option value="SCANNER">Scanner</option><option value="REPORTER">Reporter</option><option value="ADMIN">Admin</option>{user.role === 'CUSTOM' && <option value="CUSTOM" disabled>Custom (legacy)</option>}</select>}</td><td>{roleAccess(role)}</td><td><input aria-label={`New password for ${user.username}`} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="New password (optional)" /></td><td><button className="secondary" type="button" disabled={busy || user.role === 'OWNER'} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</button></td></tr>;
+}
 
 function Users() {
   const [users, setUsers] = useState<User[]>([]); const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [role, setRole] = useState<User['role']>('SCANNER'); const [message, setMessage] = useState('');
   async function load() { setUsers(await api<User[]>('/users')); } useEffect(() => { void load(); }, []);
   async function create(event: FormEvent) { event.preventDefault(); try { await api('/users', { method: 'POST', body: JSON.stringify({ username, password, role, allowedPages: [] }) }); setUsername(''); setPassword(''); setMessage('User created.'); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Unable to create user.'); } }
-  return <><PageTitle title="Users" subtitle="Create scanner-only or administrative logins." /><section className="panel"><h2>Add user</h2><form className="form-grid" onSubmit={create}><label>Username<input required value={username} onChange={(e) => setUsername(e.target.value)} /></label><label>Password<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label><label>Role<select value={role} onChange={(e) => setRole(e.target.value as User['role'])}><option value="SCANNER">Scanner only</option><option value="ADMIN">Administrator</option></select></label><button className="primary">Create user</button></form>{message && <p className="notice">{message}</p>}</section><section className="panel"><h2>Existing users</h2><div className="table-wrap"><table><thead><tr><th>Username</th><th>Role</th><th>Access</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td>{user.username}</td><td>{user.role}</td><td>{user.role === 'SCANNER' ? 'Scan Chapel' : 'Administrative'}</td></tr>)}</tbody></table></div></section></>;
+  return <><PageTitle title="Users" subtitle="Create and manage Scanner, Reporter, and Admin logins." /><section className="panel"><h2>Add user</h2><form className="form-grid" onSubmit={create}><label>Username<input required value={username} onChange={(e) => setUsername(e.target.value)} /></label><label>Password<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label><label>Role<select value={role} onChange={(e) => setRole(e.target.value as User['role'])}><option value="SCANNER">Scanner</option><option value="REPORTER">Reporter</option><option value="ADMIN">Admin</option></select></label><button className="primary">Create user</button></form>{message && <p className="notice">{message}</p>}</section><section className="panel"><h2>Existing users</h2><div className="table-wrap"><table><thead><tr><th>Username</th><th>Role</th><th>Access</th><th>Reset password</th><th></th></tr></thead><tbody>{users.map((user) => <UserEditor key={user.id} user={user} onSaved={load} onStatus={setMessage} />)}</tbody></table></div></section></>;
 }
 
 function Protected({ page, children }: { page: AppPage; children: ReactNode }) {

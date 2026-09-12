@@ -6,10 +6,12 @@ const router = Router();
 const loginAttempts = new Map<string, { count: number; first: number }>();
 const ALL_PAGES = ['DASHBOARD', 'SCAN', 'PEOPLE', 'IMPORT', 'TRANSACTIONS', 'REPORTS', 'SETTINGS', 'USER_MANAGEMENT'] as const;
 const SCANNER_PAGES = ['SCAN'] as const;
+const REPORTER_PAGES = ['SCAN', 'TRANSACTIONS', 'REPORTS'] as const;
 
-function allowedPagesFor(role: 'OWNER' | 'ADMIN' | 'SCANNER' | 'CUSTOM', customPages: string[]): string[] {
+function allowedPagesFor(role: 'OWNER' | 'ADMIN' | 'SCANNER' | 'REPORTER' | 'CUSTOM', customPages: string[]): string[] {
   if (role === 'OWNER' || role === 'ADMIN') return [...ALL_PAGES];
   if (role === 'SCANNER') return [...SCANNER_PAGES];
+  if (role === 'REPORTER') return [...REPORTER_PAGES];
   return customPages;
 }
 

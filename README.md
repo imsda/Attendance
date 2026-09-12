@@ -15,7 +15,7 @@ Built from the proven scanning, authentication, SQLite, deployment, and Google S
 - Custom date-range reports with printable results.
 - Active/inactive student roster and CSV import.
 - Google Sheets roster import, attendance-log export, and summary write-back.
-- OWNER, ADMIN, CUSTOM, and scanner-only accounts.
+- Scanner, Reporter, and Admin accounts. Reporters can scan and view attendance logs and reports without administrative access.
 - SQLite storage, safe Prisma migrations, Docker, and systemd deployment helpers.
 
 ## Quick start
