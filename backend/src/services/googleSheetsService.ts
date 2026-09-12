@@ -1,5 +1,6 @@
 import { google, sheets_v4 } from 'googleapis';
 import { AttendanceResult, Prisma } from '@prisma/client';
+import { createPrivateKey } from 'node:crypto';
 import { prisma } from '../db.js';
 import { attendancePeriods } from '../utils/dates.js';
 import { getSettings } from './settingsService.js';
@@ -50,9 +51,18 @@ function getSheetsClient() {
   if (!privateKey.includes('-----BEGIN PRIVATE KEY-----') || !privateKey.includes('-----END PRIVATE KEY-----')) {
     throw new Error('Google service account private key is malformed. Copy the complete private_key value, including the BEGIN/END PRIVATE KEY lines.');
   }
+
+  let signingKey: string;
+  try {
+    signingKey = createPrivateKey(privateKey).export({ type: 'pkcs8', format: 'pem' }).toString();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to decode the private key.';
+    throw new Error(`Google service account private key could not be parsed: ${message}`);
+  }
+
   const auth = new google.auth.JWT({
     email: clientEmail,
-    key: privateKey,
+    key: signingKey,
     scopes: ['https://www.googleapis.com/auth/spreadsheets']
   });
   return google.sheets({ version: 'v4', auth });
