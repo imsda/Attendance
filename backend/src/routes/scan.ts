@@ -11,7 +11,10 @@ router.get('/config', async (_req, res) => {
   res.json({
     scannerCooldownSeconds: settings.scannerCooldownSeconds,
     scannerDiagnosticsEnabled: settings.scannerDiagnosticsEnabled,
-    enableSounds: settings.enableSounds
+    enableSounds: settings.enableSounds,
+    chapelScanWindowEnabled: settings.chapelScanWindowEnabled,
+    chapelScanStartTime: settings.chapelScanStartTime,
+    chapelScanEndTime: settings.chapelScanEndTime
   });
 });
 

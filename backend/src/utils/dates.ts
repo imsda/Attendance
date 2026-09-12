@@ -9,6 +9,22 @@ export function localDateKey(date: Date, timezone: string): string {
   return `${value('year')}-${value('month')}-${value('day')}`;
 }
 
+export function localTimeKey(date: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value || '';
+  return `${value('hour')}:${value('minute')}`;
+}
+
+export function isWithinDailyTimeWindow(time: string, start: string, end: string): boolean {
+  if (start === end) return true;
+  return start < end ? time >= start && time <= end : time >= start || time <= end;
+}
+
 function addDays(key: string, amount: number): string {
   const date = new Date(`${key}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + amount);

@@ -1,6 +1,6 @@
 import { AttendanceResult, Prisma } from '@prisma/client';
 import { prisma, withSqliteTimeoutRetry } from '../db.js';
-import { attendancePeriods, localDateKey } from '../utils/dates.js';
+import { attendancePeriods, isWithinDailyTimeWindow, localDateKey, localTimeKey } from '../utils/dates.js';
 import { getSettings } from './settingsService.js';
 
 export async function getStudentTotals(studentId: number, timezone: string) {
@@ -24,6 +24,22 @@ export async function processAttendance(rawValue: string, adminUserId?: number) 
   const student = await prisma.student.findFirst({
     where: { OR: [{ barcode: scannedValue }, { studentId: scannedValue }] }
   });
+
+  if (settings.chapelScanWindowEnabled) {
+    const currentTime = localTimeKey(new Date(), settings.timezone);
+    if (!isWithinDailyTimeWindow(currentTime, settings.chapelScanStartTime, settings.chapelScanEndTime)) {
+      await prisma.attendance.create({ data: {
+        attendanceDate, scannedValue, result: AttendanceResult.FAILURE,
+        failureReason: 'OUTSIDE_CHAPEL_HOURS', stationName: settings.stationName, adminUserId, studentId: student?.id
+      } });
+      return {
+        ok: false as const,
+        reason: 'OUTSIDE_CHAPEL_HOURS',
+        error: `Chapel check-in is open from ${settings.chapelScanStartTime} to ${settings.chapelScanEndTime}.`,
+        student: student || undefined
+      };
+    }
+  }
 
   if (!student) {
     await prisma.attendance.create({ data: {

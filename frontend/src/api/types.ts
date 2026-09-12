@@ -31,6 +31,9 @@ export type Settings = {
   timezone: string;
   stationName: string;
   scannerCooldownSeconds: number;
+  chapelScanWindowEnabled: boolean;
+  chapelScanStartTime: string;
+  chapelScanEndTime: string;
   scannerDiagnosticsEnabled: boolean;
   enableSounds: boolean;
   oneAttendancePerDay: boolean;

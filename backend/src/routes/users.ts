@@ -6,7 +6,7 @@ import { prisma } from '../db.js';
 const router = Router();
 const ALL_PAGES: AppPage[] = [AppPage.DASHBOARD, AppPage.SCAN, AppPage.PEOPLE, AppPage.IMPORT, AppPage.TRANSACTIONS, AppPage.REPORTS, AppPage.SETTINGS, AppPage.USER_MANAGEMENT];
 const SCANNER_PAGES: AppPage[] = [AppPage.SCAN];
-const REPORTER_PAGES: AppPage[] = [AppPage.SCAN, AppPage.TRANSACTIONS, AppPage.REPORTS];
+const REPORTER_PAGES: AppPage[] = [AppPage.DASHBOARD, AppPage.SCAN, AppPage.TRANSACTIONS, AppPage.REPORTS];
 
 function getAllowedPages(role: UserRole, customPages: AppPage[]): AppPage[] {
   if (role === 'OWNER' || role === 'ADMIN') return [...ALL_PAGES];

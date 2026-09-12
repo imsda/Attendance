@@ -12,12 +12,13 @@ process.env.DATABASE_URL = `file:${databasePath}`;
 const migration = readFileSync('prisma/migrations/0001_init/migration.sql', 'utf8');
 const database = new DatabaseSync(databasePath);
 database.exec(migration);
+database.exec(readFileSync('prisma/migrations/0003_add_chapel_scan_window/migration.sql', 'utf8'));
 database.close();
 
 const { prisma } = await import('../src/db.js');
 const { processAttendance, getStudentTotals } = await import('../src/services/attendanceService.js');
 const { searchStudents } = await import('../src/services/searchStudents.js');
-const { attendancePeriods, localDateKey } = await import('../src/utils/dates.js');
+const { attendancePeriods, isWithinDailyTimeWindow, localDateKey, localTimeKey } = await import('../src/utils/dates.js');
 
 test.after(async () => { await prisma.$disconnect(); });
 
@@ -48,4 +49,13 @@ test('computes week, month, year, and all-time totals', async () => {
   assert.equal(totals.year, 1);
   assert.equal(totals.allTime, 2);
   assert.equal(localDateKey(new Date(), 'America/Chicago'), periods.today);
+});
+
+test('enforces normal and overnight chapel scan windows', () => {
+  assert.equal(isWithinDailyTimeWindow('08:30', '07:00', '09:00'), true);
+  assert.equal(isWithinDailyTimeWindow('09:01', '07:00', '09:00'), false);
+  assert.equal(isWithinDailyTimeWindow('23:30', '22:00', '02:00'), true);
+  assert.equal(isWithinDailyTimeWindow('01:30', '22:00', '02:00'), true);
+  assert.equal(isWithinDailyTimeWindow('12:00', '22:00', '02:00'), false);
+  assert.match(localTimeKey(new Date(), 'America/Chicago'), /^\d{2}:\d{2}$/);
 });

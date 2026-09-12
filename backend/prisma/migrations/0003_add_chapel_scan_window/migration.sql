@@ -1,0 +1,3 @@
+ALTER TABLE "Setting" ADD COLUMN "chapelScanWindowEnabled" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Setting" ADD COLUMN "chapelScanStartTime" TEXT NOT NULL DEFAULT '07:00';
+ALTER TABLE "Setting" ADD COLUMN "chapelScanEndTime" TEXT NOT NULL DEFAULT '12:00';
