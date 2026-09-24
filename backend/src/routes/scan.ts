@@ -3,18 +3,34 @@ import { z } from 'zod';
 import { processAttendance } from '../services/attendanceService.js';
 import { searchStudents } from '../services/searchStudents.js';
 import { getSettings } from '../services/settingsService.js';
+import { prisma } from '../db.js';
 
 const router = Router();
 
-router.get('/config', async (_req, res) => {
+router.get('/config', async (req, res) => {
   const settings = await getSettings();
+  const user = await prisma.adminUser.findUnique({ where: { id: req.session.adminUserId }, select: { scannerCooldownSeconds: true } });
   res.json({
-    scannerCooldownSeconds: settings.scannerCooldownSeconds,
+    scannerCooldownSeconds: user?.scannerCooldownSeconds ?? settings.scannerCooldownSeconds,
+    scannerCooldownDefaultSeconds: settings.scannerCooldownSeconds,
     scannerDiagnosticsEnabled: settings.scannerDiagnosticsEnabled,
     enableSounds: settings.enableSounds,
     chapelScanWindowEnabled: settings.chapelScanWindowEnabled,
     chapelScanStartTime: settings.chapelScanStartTime,
     chapelScanEndTime: settings.chapelScanEndTime
+  });
+});
+
+router.patch('/config', async (req, res) => {
+  const payload = z.object({ scannerCooldownSeconds: z.number().min(0.25).max(30).nullable() }).parse(req.body);
+  await prisma.adminUser.update({
+    where: { id: req.session.adminUserId },
+    data: { scannerCooldownSeconds: payload.scannerCooldownSeconds }
+  });
+  const settings = await getSettings();
+  return res.json({
+    scannerCooldownSeconds: payload.scannerCooldownSeconds ?? settings.scannerCooldownSeconds,
+    scannerCooldownDefaultSeconds: settings.scannerCooldownSeconds
   });
 });
 

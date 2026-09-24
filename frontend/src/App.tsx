@@ -93,11 +93,13 @@ function Dashboard() {
 }
 
 type ScanResult = { ok: boolean; error?: string; reason?: string; student?: Student; attendanceDate?: string; totals?: { week: number; month: number; year: number; allTime: number } };
-type ScanConfig = Pick<Settings, 'scannerCooldownSeconds' | 'scannerDiagnosticsEnabled' | 'enableSounds' | 'chapelScanWindowEnabled' | 'chapelScanStartTime' | 'chapelScanEndTime'>;
+type ScanConfig = Pick<Settings, 'scannerCooldownSeconds' | 'scannerDiagnosticsEnabled' | 'enableSounds' | 'chapelScanWindowEnabled' | 'chapelScanStartTime' | 'chapelScanEndTime'> & { scannerCooldownDefaultSeconds: number };
 
 function ScanStation() {
   const [settings, setSettings] = useState<ScanConfig | null>(null);
-  const [mode, setMode] = useState<'usb' | 'camera'>('usb');
+  const [mode, setMode] = useState<'usb' | 'camera' | 'settings'>('usb');
+  const [scanDelaySeconds, setScanDelaySeconds] = useState(1);
+  const [scannerSettingsMessage, setScannerSettingsMessage] = useState('');
   const [value, setValue] = useState('');
   const [result, setResult] = useState<ScanResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -105,7 +107,7 @@ function ScanStation() {
   const [matches, setMatches] = useState<Student[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastSubmissionRef = useRef<{ value: string; timestamp: number } | null>(null);
-  useEffect(() => { void api<ScanConfig>('/scan/config').then(setSettings); }, []);
+  useEffect(() => { void api<ScanConfig>('/scan/config').then((config) => { setSettings(config); setScanDelaySeconds(config.scannerCooldownSeconds); }); }, []);
   useEffect(() => {
     if (!lookup.trim()) { setMatches([]); return; }
     const timer = window.setTimeout(() => void api<Student[]>(`/scan/students?q=${encodeURIComponent(lookup)}`).then(setMatches), 250);
@@ -124,11 +126,22 @@ function ScanStation() {
     oscillator.start(); oscillator.stop(context.currentTime + 0.2);
   }
 
+  async function saveScannerDelay(value: number | null) {
+    try {
+      const updated = await api<{ scannerCooldownSeconds: number; scannerCooldownDefaultSeconds: number }>('/scan/config', { method: 'PATCH', body: JSON.stringify({ scannerCooldownSeconds: value }) });
+      setScanDelaySeconds(updated.scannerCooldownSeconds);
+      setSettings((current) => current ? { ...current, scannerCooldownSeconds: updated.scannerCooldownSeconds, scannerCooldownDefaultSeconds: updated.scannerCooldownDefaultSeconds } : current);
+      setScannerSettingsMessage(value === null ? 'Using the global scanner delay.' : 'Scanner delay saved to your account.');
+    } catch (error) {
+      setScannerSettingsMessage(error instanceof Error ? error.message : 'Unable to save scanner delay.');
+    }
+  }
+
   async function record(scannedValue: string) {
     const trimmed = scannedValue.trim();
     if (busy || !trimmed) return;
     const now = Date.now();
-    const cooldownMs = (settings?.scannerCooldownSeconds || 1) * 1000;
+    const cooldownMs = scanDelaySeconds * 1000;
     if (lastSubmissionRef.current?.value === trimmed && now - lastSubmissionRef.current.timestamp < cooldownMs) return;
     lastSubmissionRef.current = { value: trimmed, timestamp: now };
     setBusy(true);
@@ -142,11 +155,12 @@ function ScanStation() {
 
   return <>
     <PageTitle title="Scan chapel attendance" subtitle="Use a USB scanner, camera, student ID, or name lookup." />
-    <p className="muted">Scan cooldown: <strong>{settings?.scannerCooldownSeconds || 1} second{(settings?.scannerCooldownSeconds || 1) === 1 ? '' : 's'}</strong></p>
+    <p className="muted">Scan cooldown: <strong>{scanDelaySeconds} second{scanDelaySeconds === 1 ? '' : 's'}</strong></p>
     {settings?.chapelScanWindowEnabled && <p className="muted">Check-in hours: <strong>{settings.chapelScanStartTime}–{settings.chapelScanEndTime}</strong></p>}
-    <div className="segmented"><button className={mode === 'usb' ? 'active' : ''} onClick={() => setMode('usb')}>USB scanner / ID</button><button className={mode === 'camera' ? 'active' : ''} onClick={() => setMode('camera')}>Camera</button></div>
-    {mode === 'camera' && <QrScanner onResult={(text) => void record(text)} onError={(error) => setResult({ ok: false, error })} cooldownMs={(settings?.scannerCooldownSeconds || 1) * 1000} diagnosticsEnabled={settings?.scannerDiagnosticsEnabled} selectedScannerMode="camera" />}
+    <div className="segmented"><button className={mode === 'usb' ? 'active' : ''} onClick={() => setMode('usb')}>USB scanner / ID</button><button className={mode === 'camera' ? 'active' : ''} onClick={() => setMode('camera')}>Camera</button><button className={mode === 'settings' ? 'active' : ''} onClick={() => setMode('settings')}>Scanner Settings</button></div>
+    {mode === 'camera' && <QrScanner onResult={(text) => void record(text)} onError={(error) => setResult({ ok: false, error })} cooldownMs={scanDelaySeconds * 1000} diagnosticsEnabled={settings?.scannerDiagnosticsEnabled} selectedScannerMode="camera" />}
     {mode === 'usb' && <section className="panel scan-entry"><form onSubmit={(event) => { event.preventDefault(); void record(value); }}><label>Scan barcode or enter student ID<input ref={inputRef} className="scan-input" value={value} onChange={(e) => setValue(e.target.value)} autoFocus autoComplete="off" placeholder="Ready to scan…" /></label><button className="primary" disabled={busy}>{busy ? 'Recording…' : 'Check in'}</button></form><p className="muted">Most USB barcode scanners type the ID and press Enter automatically.</p></section>}
+    {mode === 'settings' && <section className="panel"><h2>Scanner delay</h2><p className="muted">Adjust the duplicate-scan cooldown saved to your signed-in account. The global default is {settings?.scannerCooldownDefaultSeconds || 1} second{(settings?.scannerCooldownDefaultSeconds || 1) === 1 ? '' : 's'}.</p><div className="form-grid"><label>Cooldown (seconds)<input type="number" min="0.25" max="30" step="0.25" value={scanDelaySeconds} onChange={(event) => { const next = Number(event.target.value); if (Number.isFinite(next)) setScanDelaySeconds(next); }} /></label><div className="button-row">{[0.5, 1, 2, 3, 5].map((seconds) => <button key={seconds} type="button" className={scanDelaySeconds === seconds ? 'primary' : 'secondary'} onClick={() => setScanDelaySeconds(seconds)}>{seconds}s</button>)}</div><div className="button-row"><button type="button" className="primary" disabled={scanDelaySeconds < 0.25 || scanDelaySeconds > 30} onClick={() => void saveScannerDelay(scanDelaySeconds)}>Save delay</button><button type="button" className="secondary" onClick={() => void saveScannerDelay(null)}>Use global default</button></div></div>{scannerSettingsMessage && <p className="notice">{scannerSettingsMessage}</p>}</section>}
     {result && <section className={`scan-result ${result.ok ? 'success' : 'error'}`}>
       <strong>{result.ok ? `Checked in: ${fullName(result.student)}` : result.error}</strong>
       {result.student?.grade && <span>Grade {result.student.grade}</span>}
