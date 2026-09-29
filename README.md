@@ -87,7 +87,7 @@ The app creates or uses three tabs:
 
 ### `Students`
 
-This is the roster source. Use this exact header row:
+This is the roster source. A new, empty tab gets this header row; columns are matched by header name, so they may be reordered:
 
 ```text
 Student ID,First Name,Last Name,Grade,Active,Barcode,This Week,This Month,This Year,All Time
@@ -96,8 +96,8 @@ Student ID,First Name,Last Name,Grade,Active,Barcode,This Week,This Month,This Y
 - `Student ID`, `First Name`, and `Last Name` are required.
 - `Barcode` is optional and defaults to Student ID.
 - `Active` accepts yes/no, true/false, 1/0, or active/inactive.
-- The app imports the first six columns and writes calculated totals to the last four.
-- Existing student IDs are updated rather than duplicated.
+- Existing student IDs are updated rather than duplicated. A blank Barcode cell keeps the student's current barcode.
+- The sync never rewrites the roster header row once it exists; the This Week/Month/Year/All Time counts are written to whichever columns carry those headers.
 
 ### `Attendance`
 
@@ -127,7 +127,7 @@ Browser camera access requires HTTPS or localhost. On phones and tablets, serve 
 
 ## Attendance rules
 
-By default, the first successful check-in for a student on a local calendar day counts. Further scans are recorded as rejected attempts and do not change totals. This rule is concurrency-safe: simultaneous scans cannot create two daily records. Administrators can disable the once-per-day rule in Settings if the academy needs multiple counted chapel events on one date.
+By default, the first successful check-in for a student on a local calendar day counts. Further scans are recorded as rejected attempts and do not change totals. Rejected attempts (duplicates, unknown IDs, outside chapel hours) are deleted automatically after 30 days; successful attendance is kept. This rule is concurrency-safe: simultaneous scans cannot create two daily records. Administrators can disable the once-per-day rule in Settings if the academy needs multiple counted chapel events on one date.
 
 The week begins Monday. Month and year totals use the calendar month/year in the configured timezone.
 
@@ -149,7 +149,7 @@ The installer also applies pending database migrations without resetting existin
 docker compose up -d --build
 ```
 
-Persist `backend/prisma` so the SQLite database survives container recreation.
+Compose mounts `backend/prisma` (SQLite database), `backend/data` (login sessions), and the `backend/.env` and `frontend/.env` files, so data and sign-ins survive container recreation.
 
 ## Data safety
 

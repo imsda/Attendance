@@ -5,5 +5,6 @@ declare module 'express-session' {
     adminUserId?: number;
     role?: 'OWNER' | 'ADMIN' | 'SCANNER' | 'REPORTER' | 'CUSTOM';
     allowedPages?: string[];
+    credentialStamp?: string;
   }
 }

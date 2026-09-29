@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { getSettings } from '../services/settingsService.js';
-import { getStudentTotals } from '../services/attendanceService.js';
+import { getTotalsForStudents } from '../services/attendanceService.js';
+import { Prisma } from '@prisma/client';
 
 const router = Router();
 const studentSchema = z.object({
@@ -30,8 +31,8 @@ router.get('/', async (req, res) => {
     take: 500
   });
   const settings = await getSettings();
-  const withTotals = await Promise.all(students.map(async (student) => ({ ...student, totals: await getStudentTotals(student.id, settings.timezone) })));
-  res.json(withTotals);
+  const totals = await getTotalsForStudents(students.map((student) => student.id), settings.timezone);
+  res.json(students.map((student) => ({ ...student, totals: totals.get(student.id) })));
 });
 
 router.post('/', async (req, res) => {
@@ -45,15 +46,24 @@ router.post('/', async (req, res) => {
   }
 });
 
+const isNotFound = (error: unknown) => error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025';
+
 router.patch('/:id', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid student.' });
   try {
     const payload = studentSchema.partial().parse(req.body);
+    if (payload.barcode === '') {
+      // An empty barcode falls back to the student ID, matching create/import.
+      const existing = await prisma.student.findUnique({ where: { id }, select: { studentId: true } });
+      if (!existing) return res.status(404).json({ error: 'Student not found.' });
+      payload.barcode = payload.studentId || existing.studentId;
+    }
     const student = await prisma.student.update({ where: { id }, data: payload });
     res.json(student);
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid student.' });
+    if (isNotFound(error)) return res.status(404).json({ error: 'Student not found.' });
     return res.status(400).json({ error: 'Unable to update student. Student ID and barcode must be unique.' });
   }
 });
@@ -61,7 +71,8 @@ router.patch('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid student.' });
-  await prisma.student.update({ where: { id }, data: { active: false } });
+  const { count } = await prisma.student.updateMany({ where: { id }, data: { active: false } });
+  if (!count) return res.status(404).json({ error: 'Student not found.' });
   res.json({ ok: true });
 });
 

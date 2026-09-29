@@ -3,20 +3,20 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 const directory = mkdtempSync(join(tmpdir(), 'chapel-attendance-'));
 const databasePath = join(directory, 'test.db');
 process.env.DATABASE_URL = `file:${databasePath}`;
-const migration = readFileSync('prisma/migrations/0001_init/migration.sql', 'utf8');
 const database = new DatabaseSync(databasePath);
-database.exec(migration);
-database.exec(readFileSync('prisma/migrations/0003_add_chapel_scan_window/migration.sql', 'utf8'));
+for (const migration of readdirSync('prisma/migrations', { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort()) {
+  database.exec(readFileSync(join('prisma/migrations', migration, 'migration.sql'), 'utf8'));
+}
 database.close();
 
 const { prisma } = await import('../src/db.js');
-const { processAttendance, getStudentTotals } = await import('../src/services/attendanceService.js');
+const { processAttendance, getStudentTotals, getTotalsForStudents, purgeOldFailedScans } = await import('../src/services/attendanceService.js');
 const { searchStudents } = await import('../src/services/searchStudents.js');
 const { attendancePeriods, isWithinDailyTimeWindow, localDateKey, localTimeKey } = await import('../src/utils/dates.js');
 
@@ -58,4 +58,27 @@ test('enforces normal and overnight chapel scan windows', () => {
   assert.equal(isWithinDailyTimeWindow('01:30', '22:00', '02:00'), true);
   assert.equal(isWithinDailyTimeWindow('12:00', '22:00', '02:00'), false);
   assert.match(localTimeKey(new Date(), 'America/Chicago'), /^\d{2}:\d{2}$/);
+});
+
+test('computes totals for many students in one pass', async () => {
+  const jane = await prisma.student.findUniqueOrThrow({ where: { studentId: 'S100' } });
+  const other = await prisma.student.create({ data: { studentId: 'S200', barcode: 'S200', firstName: 'Sam', lastName: 'Lee' } });
+  const totals = await getTotalsForStudents([jane.id, other.id], 'America/Chicago');
+  assert.deepEqual(totals.get(jane.id), await getStudentTotals(jane.id, 'America/Chicago'));
+  assert.deepEqual(totals.get(other.id), { week: 0, month: 0, year: 0, allTime: 0 });
+});
+
+test('removes failed scans older than 30 days and keeps attendance', async () => {
+  const student = await prisma.student.findUniqueOrThrow({ where: { studentId: 'S100' } });
+  const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+  const recent = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000);
+  await prisma.attendance.createMany({ data: [
+    { attendanceDate: '2000-01-02', timestamp: old, scannedValue: 'X1', result: 'FAILURE', failureReason: 'STUDENT_NOT_FOUND' },
+    { attendanceDate: '2000-01-03', timestamp: recent, scannedValue: 'X2', result: 'FAILURE', failureReason: 'STUDENT_NOT_FOUND' },
+    { attendanceDate: '2000-01-04', timestamp: old, scannedValue: 'S100', result: 'SUCCESS', studentId: student.id }
+  ] });
+  assert.equal(await purgeOldFailedScans(), 1);
+  assert.equal(await prisma.attendance.count({ where: { scannedValue: 'X1' } }), 0);
+  assert.equal(await prisma.attendance.count({ where: { scannedValue: 'X2' } }), 1);
+  assert.equal(await prisma.attendance.count({ where: { attendanceDate: '2000-01-04', result: 'SUCCESS' } }), 1);
 });

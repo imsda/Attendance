@@ -30,13 +30,15 @@ router.post('/csv', upload.single('file'), async (req, res) => {
       errors.push(`Row ${index + 2}: Student ID, First Name, and Last Name are required.`);
       continue;
     }
-    const barcode = value(row, 'barcode') || studentId;
+    // A blank barcode defaults to the student ID for new students but never
+    // replaces a barcode already assigned to an existing student.
+    const barcodeValue = value(row, 'barcode');
     const activeValue = value(row, 'active').toLowerCase();
     try {
       await prisma.student.upsert({
         where: { studentId },
-        create: { studentId, barcode, firstName, lastName, grade: value(row, 'grade') || null, active: !['false', 'no', '0', 'inactive'].includes(activeValue) },
-        update: { barcode, firstName, lastName, grade: value(row, 'grade') || null, active: !['false', 'no', '0', 'inactive'].includes(activeValue) }
+        create: { studentId, barcode: barcodeValue || studentId, firstName, lastName, grade: value(row, 'grade') || null, active: !['false', 'no', '0', 'inactive'].includes(activeValue) },
+        update: { ...(barcodeValue ? { barcode: barcodeValue } : {}), firstName, lastName, grade: value(row, 'grade') || null, active: !['false', 'no', '0', 'inactive'].includes(activeValue) }
       });
       imported += 1;
     } catch { errors.push(`Row ${index + 2}: Student ID or barcode conflicts with another student.`); }
