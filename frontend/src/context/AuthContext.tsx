@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { api } from '../api/client';
+import { api, UNAUTHORIZED_EVENT } from '../api/client';
 
 export type UserRole = 'OWNER' | 'ADMIN' | 'SCANNER' | 'REPORTER' | 'CUSTOM';
 export type AppPage = 'DASHBOARD' | 'SCAN' | 'PEOPLE' | 'IMPORT' | 'TRANSACTIONS' | 'REPORTS' | 'SETTINGS' | 'USER_MANAGEMENT';
@@ -18,6 +18,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     api<User>('/auth/me').then(setUser).catch(() => setUser(null)).finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    const signOut = () => setUser(null);
+    window.addEventListener(UNAUTHORIZED_EVENT, signOut);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, signOut);
   }, []);
 
   async function login(username: string, password: string) {

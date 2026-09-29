@@ -51,7 +51,7 @@ router.post('/', async (req, res) => {
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ error: 'A barcode or student ID is required.' });
     console.error('[ATTENDANCE_SCAN]', error);
-    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unable to record attendance.' });
+    return res.status(500).json({ error: 'Unable to record attendance.' });
   }
 });
 

@@ -9,15 +9,15 @@ const router = Router();
 router.get('/', async (_req, res) => {
   const settings = await getSettings();
   const periods = attendancePeriods(settings.timezone);
-  const [activeStudents, successful, failedToday, recent] = await Promise.all([
+  const countSince = (start: string) => prisma.attendance.count({ where: { result: AttendanceResult.SUCCESS, attendanceDate: { gte: start, lte: periods.today } } });
+  const [activeStudents, today, week, month, year, failedToday, recent] = await Promise.all([
     prisma.student.count({ where: { active: true } }),
-    prisma.attendance.findMany({ where: { result: AttendanceResult.SUCCESS }, select: { attendanceDate: true } }),
+    countSince(periods.today), countSince(periods.weekStart), countSince(periods.monthStart), countSince(periods.yearStart),
     prisma.attendance.count({ where: { result: AttendanceResult.FAILURE, attendanceDate: periods.today } }),
     prisma.attendance.findMany({ include: { student: true }, orderBy: { timestamp: 'desc' }, take: 12 })
   ]);
-  const countSince = (start: string) => successful.filter((row) => row.attendanceDate >= start && row.attendanceDate <= periods.today).length;
   res.json({
-    counts: { today: countSince(periods.today), week: countSince(periods.weekStart), month: countSince(periods.monthStart), year: countSince(periods.yearStart), activeStudents, failedToday },
+    counts: { today, week, month, year, activeStudents, failedToday },
     periods,
     recent
   });

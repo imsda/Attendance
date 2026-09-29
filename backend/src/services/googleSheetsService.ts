@@ -87,7 +87,7 @@ async function ensureTabs(sheets: sheets_v4.Sheets, spreadsheetId: string, title
 async function ensureHeader(sheets: sheets_v4.Sheets, spreadsheetId: string, tab: string, headers: string[]) {
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: sheetRange(tab, `A1:${String.fromCharCode(64 + headers.length)}1`),
+    range: sheetRange(tab, `A1:${columnLetter(headers.length - 1)}1`),
     valueInputOption: 'RAW',
     requestBody: { values: [headers] }
   });
@@ -127,7 +127,10 @@ async function importRoster(sheets: sheets_v4.Sheets, spreadsheetId: string, tab
       errors.push(`Students row ${index + 1}: Student ID, First Name, and Last Name are required.`);
       continue;
     }
-    const barcode = rowValue(row, headerMap, ['Barcode']) || studentId;
+    // A blank barcode defaults to the student ID for new students but never
+    // replaces a barcode already assigned to an existing student.
+    const barcodeValue = rowValue(row, headerMap, ['Barcode']);
+    const barcode = barcodeValue || studentId;
     try {
       await prisma.student.upsert({
         where: { studentId },
@@ -137,7 +140,7 @@ async function importRoster(sheets: sheets_v4.Sheets, spreadsheetId: string, tab
           active: booleanCell(rowValue(row, headerMap, ['Active']))
         },
         update: {
-          barcode, firstName, lastName,
+          ...(barcodeValue ? { barcode: barcodeValue } : {}), firstName, lastName,
           grade: rowValue(row, headerMap, ['Grade']) || null,
           active: booleanCell(rowValue(row, headerMap, ['Active']))
         }
@@ -156,6 +159,14 @@ async function importRoster(sheets: sheets_v4.Sheets, spreadsheetId: string, tab
 }
 
 type Totals = { week: number; month: number; year: number; allTime: number; lastAttendance: string };
+type CountKey = 'week' | 'month' | 'year' | 'allTime';
+const ROSTER_COUNT_HEADERS: Array<[string, CountKey]> = [['This Week', 'week'], ['This Month', 'month'], ['This Year', 'year'], ['All Time', 'allTime']];
+
+export function columnLetter(index: number): string {
+  let letters = '';
+  for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) letters = String.fromCharCode(65 + ((n - 1) % 26)) + letters;
+  return letters;
+}
 
 async function buildTotals(timezone: string) {
   const periods = attendancePeriods(timezone);
@@ -212,17 +223,28 @@ async function writeSummaries(
 
   if (rosterRows.length > 1) {
     const headerMap = new Map(rosterRows[0].map((value, index) => [normalizeHeader(value), index]));
-    const countRows = rosterRows.slice(1).map((row) => {
+    const countColumns = ROSTER_COUNT_HEADERS.map(([header, key]) => ({ index: headerMap.get(normalizeHeader(header)), key }))
+      .filter((column): column is { index: number; key: CountKey } => column.index !== undefined);
+    const dataRows = rosterRows.slice(1);
+    const totalsForRow = dataRows.map((row) => {
       const student = byStudentId.get(rowValue(row, headerMap, ['Student ID', 'ID']));
-      const value = student ? totals.get(student.id) : undefined;
-      return [value?.week || 0, value?.month || 0, value?.year || 0, value?.allTime || 0];
+      return student ? totals.get(student.id) : undefined;
     });
-    if (countRows.length) {
-      await sheets.spreadsheets.values.update({
+    // Write each count to the column that carries its header, wherever the
+    // school placed it, and leave the sheet alone if those columns are absent.
+    if (countColumns.length) {
+      await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId,
-        range: sheetRange(rosterTab, `G2:J${countRows.length + 1}`),
-        valueInputOption: 'RAW',
-        requestBody: { values: countRows }
+        requestBody: {
+          valueInputOption: 'RAW',
+          data: countColumns.map(({ index, key }) => {
+            const column = columnLetter(index);
+            return {
+              range: sheetRange(rosterTab, `${column}2:${column}${dataRows.length + 1}`),
+              values: totalsForRow.map((value) => [value?.[key] || 0])
+            };
+          })
+        }
       });
     }
   }
@@ -251,7 +273,8 @@ async function executeGoogleSync(): Promise<GoogleSyncResult> {
   const sheets = getSheetsClient();
   const errors: string[] = [];
   await ensureTabs(sheets, spreadsheetId, [settings.googleRosterTabName, settings.googleAttendanceTabName, settings.googleSummaryTabName]);
-  await ensureHeader(sheets, spreadsheetId, settings.googleRosterTabName, ROSTER_HEADERS);
+  // The roster header is only written when the tab is empty (see importRoster);
+  // rewriting it would misalign a sheet whose columns are in a different order.
   await ensureHeader(sheets, spreadsheetId, settings.googleAttendanceTabName, ATTENDANCE_HEADERS);
   await ensureHeader(sheets, spreadsheetId, settings.googleSummaryTabName, SUMMARY_HEADERS);
 
@@ -276,7 +299,6 @@ async function executeRosterImport(): Promise<GoogleSyncResult> {
   const sheets = getSheetsClient();
   const errors: string[] = [];
   await ensureTabs(sheets, spreadsheetId, [settings.googleRosterTabName]);
-  await ensureHeader(sheets, spreadsheetId, settings.googleRosterTabName, ROSTER_HEADERS);
   const roster = await importRoster(sheets, spreadsheetId, settings.googleRosterTabName, errors);
   return { imported: roster.imported, failed: roster.failed, attendanceRowsAppended: 0, summariesUpdated: 0, errors };
 }

@@ -113,6 +113,7 @@ model Attendance {
 
   @@index([studentId, result, attendanceDate])
   @@index([result, timestamp])
+  @@index([result, attendanceDate])
   @@index([googleSyncedAt])
 }
 

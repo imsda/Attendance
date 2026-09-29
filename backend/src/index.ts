@@ -1,4 +1,5 @@
 import express from 'express';
+import 'express-async-errors';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import session from 'express-session';
@@ -20,6 +21,7 @@ import { requireAdmin, requireAuth, requirePageAccess } from './middleware/auth.
 import { configureSqlitePragmas } from './db.js';
 import { ensureSettingsInitialized } from './services/settingsService.js';
 import { startGoogleSheetsScheduler } from './services/googleSheetsService.js';
+import { startFailedScanCleanup } from './services/attendanceService.js';
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFilePath);
@@ -81,7 +83,7 @@ app.use(
         return;
       }
 
-      callback(new Error(`Origin ${origin} is not allowed by CORS`));
+      callback(Object.assign(new Error(`Origin ${origin} is not allowed by CORS`), { status: 403 }));
     }
   })
 );
@@ -93,6 +95,7 @@ app.use(
     store: sessionStore as session.Store,
     secret: process.env.SESSION_SECRET || (isProduction ? (()=>{throw new Error('SESSION_SECRET is required in production');})() : 'change-me'),
     resave: false,
+    rolling: true,
     saveUninitialized: false,
     cookie: { httpOnly: true, maxAge: 1000 * 60 * 60 * 8, sameSite: 'lax', secure: isProduction && behindProxy }
   })
@@ -121,10 +124,22 @@ if (isProduction) {
   }
 }
 
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
 app.use('/api', (error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  const message = error instanceof Error && error.message ? error.message : 'Internal server error';
   console.error('[API] Unhandled error.', error);
-  res.status(500).json({ error: message });
+  if (res.headersSent) return;
+  // Client errors (bad JSON, oversized body, rejected CORS origin) carry a 4xx
+  // status and a safe message; anything else is an internal failure whose
+  // details stay in the server log.
+  const status = typeof (error as { status?: unknown })?.status === 'number' ? (error as { status: number }).status : 500;
+  if (status >= 400 && status < 500) {
+    res.status(status).json({ error: error instanceof Error ? error.message : 'Bad request' });
+    return;
+  }
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 if (isProduction) {
@@ -151,6 +166,7 @@ app.listen(port, host, () => {
       await configureSqlitePragmas();
       await ensureSettingsInitialized();
       startGoogleSheetsScheduler();
+      startFailedScanCleanup();
       console.log('[SETTINGS] Initialization check completed at startup.');
     } catch (error) {
       console.error('[STARTUP] Scheduler/settings initialization failed; backend will continue running.', error);

@@ -3,8 +3,8 @@ services:
     build: .
     ports:
       - "4000:4000"
-      - "5173:5173"
     volumes:
       - ./backend/prisma:/app/backend/prisma
-      - ./backend/backups:/app/backend/backups
-      - ./.env:/app/.env
+      - ./backend/data:/app/backend/data
+      - ./backend/.env:/app/backend/.env:ro
+      - ./frontend/.env:/app/frontend/.env:ro

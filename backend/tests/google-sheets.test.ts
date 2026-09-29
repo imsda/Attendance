@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeGooglePrivateKey, parseSpreadsheetId } from '../src/services/googleSheetsService.js';
+import { columnLetter, normalizeGooglePrivateKey, parseSpreadsheetId } from '../src/services/googleSheetsService.js';
 
 test('accepts a full Google Sheets URL or a spreadsheet ID', () => {
   const id = '1AbC_def-GHI234';
@@ -17,4 +17,12 @@ test('a normalized private key survives base64 transport', () => {
   const key = '-----BEGIN PRIVATE KEY-----\nABC\n-----END PRIVATE KEY-----';
   const encoded = Buffer.from(key, 'utf8').toString('base64');
   assert.equal(normalizeGooglePrivateKey(Buffer.from(encoded, 'base64').toString('utf8')), key);
+});
+
+test('converts zero-based column indexes to sheet letters', () => {
+  assert.equal(columnLetter(0), 'A');
+  assert.equal(columnLetter(9), 'J');
+  assert.equal(columnLetter(25), 'Z');
+  assert.equal(columnLetter(26), 'AA');
+  assert.equal(columnLetter(701), 'ZZ');
 });

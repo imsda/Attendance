@@ -14,6 +14,8 @@ function getErrorMessage(payload: unknown): string | null {
   return typeof maybeError === 'string' && maybeError.length > 0 ? maybeError : null;
 }
 
+export const UNAUTHORIZED_EVENT = 'api:unauthorized';
+
 export class ApiNetworkError extends Error {
   requestUrl: string;
   causeError: unknown;
@@ -38,6 +40,11 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     });
   } catch (networkError) {
     throw new ApiNetworkError(requestUrl, networkError);
+  }
+
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    // The session expired or the account was changed; return to the login screen.
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
   }
 
   if (!res.ok) {
